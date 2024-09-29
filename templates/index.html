@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>My Personal Gallery</title>
+</head>
+<body>
+    <h1>Welcome to My Personal Gallery</h1>
+
+    <h2>Poem of the Day</h2>
+    <pre>{{ .poemContent }}</pre>
+
+    <h2>Random Songs</h2>
+    <ul>
+    {{ range .songs }}
+        <li>{{ . }}</li>
+    {{ end }}
+    </ul>
+</body>
+</html>

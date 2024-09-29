@@ -1,0 +1,123 @@
+package main
+
+import (
+	"html/template"
+	"io/ioutil"
+	"log"
+	"math/rand"
+	"net/http"
+	"path/filepath"
+	"sync"
+	"time"
+
+	"github.com/gin-gonic/gin"
+)
+
+// Poem represents a poem with its content
+type Poem struct {
+	Content string `json:"content"`
+}
+
+// Song represents a song with its title
+type Song struct {
+	Title string `json:"title"`
+}
+
+var (
+	cachedPoem      Poem
+	poemCacheTime   time.Time
+	poemCacheMutex  sync.Mutex
+)
+
+func main() {
+	router := gin.Default()
+
+	// Serve static files
+	router.Static("/static", "./static")
+
+	// Load HTML templates
+	router.SetFuncMap(template.FuncMap{
+		"safe": func(s string) template.HTML { return template.HTML(s) },
+	})
+	router.LoadHTMLGlob("templates/*")
+
+	// Routes
+	router.GET("/", showIndex)
+	router.GET("/poem", getPoem)
+	router.GET("/songs", getSongs)
+
+	// Start the server
+	if err := router.Run(":8080"); err != nil {
+		log.Fatal("Failed to run server: ", err)
+	}
+}
+
+// showIndex renders the homepage
+func showIndex(c *gin.Context) {
+	c.HTML(http.StatusOK, "index.html", gin.H{})
+}
+
+// getPoem handles fetching a random poem with caching
+func getPoem(c *gin.Context) {
+	poemCacheMutex.Lock()
+	defer poemCacheMutex.Unlock()
+
+	// Check if cached poem is still valid
+	if time.Now().Before(poemCacheTime.Add(4*time.Hour)) && cachedPoem.Content != "" {
+		c.JSON(http.StatusOK, cachedPoem)
+		return
+	}
+
+	poems, err := filepath.Glob("poems/*.txt")
+	if err != nil || len(poems) == 0 {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "No poems found."})
+		return
+	}
+
+	// Randomly select a poem
+	rand.Seed(time.Now().UnixNano())
+	selectedPoemPath := poems[rand.Intn(len(poems))]
+
+	// Read the poem content
+	contentBytes, err := ioutil.ReadFile(selectedPoemPath)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error reading poem."})
+		return
+	}
+	content := string(contentBytes)
+
+	// Cache the poem
+	cachedPoem = Poem{Content: content}
+	poemCacheTime = time.Now()
+
+	c.JSON(http.StatusOK, cachedPoem)
+}
+
+// getSongs handles fetching a list of 5 random songs
+func getSongs(c *gin.Context) {
+	songs, err := filepath.Glob("songs/*.txt")
+	if err != nil || len(songs) == 0 {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "No songs found."})
+		return
+	}
+
+	// Randomly select 5 songs
+	rand.Seed(time.Now().UnixNano())
+	rand.Shuffle(len(songs), func(i, j int) {
+		songs[i], songs[j] = songs[j], songs[i]
+	})
+	selectedSongs := songs
+	if len(songs) > 5 {
+		selectedSongs = songs[:5]
+	}
+
+	// Convert to Song structs
+	var songList []Song
+	for _, song := range selectedSongs {
+		title := filepath.Base(song)
+		title = title[:len(title)-len(filepath.Ext(song))]
+		songList = append(songList, Song{Title: title})
+	}
+
+	c.JSON(http.StatusOK, songList)
+}
